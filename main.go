@@ -54,10 +54,14 @@ func BarberWork(waitingCustomers chan *Customer, b *Barber) {
 
 func DoesHairCut(c *Customer, b *Barber) {
 	b.state = cutting
+
+	b.Unlock()
+
 	fmt.Printf("Cutting hair to %v", c.name)
 	time.Sleep(time.Millisecond * 100)
 	fmt.Printf("Hair cut to %v is finished", c.name)
 
+	b.Lock()
 }
 
 func main() {
