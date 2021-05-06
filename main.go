@@ -32,7 +32,7 @@ func NewBarber() *Barber {
 	}
 }
 
-func barberWork(waitingCustomers chan *Customer, b *Barber) {
+func barberWork(waitingCustomers chan *Customer, b *Barber, wakers chan *Customer) {
 
 	for {
 		b.Lock()
@@ -48,11 +48,15 @@ func barberWork(waitingCustomers chan *Customer, b *Barber) {
 			doesHairCut(c, b)
 			b.Unlock()
 		default:
-			fmt.Println("The barber is sleeping because the waiting room is empty")
+			fmt.Print("The barber is sleeping because the waiting room is empty \n \n")
 			b.state = sleeping
 			b.customerBeingAttended = nil
 			b.Unlock()
-
+			c := <-wakers
+			b.Lock()
+			fmt.Println("Woken by ", c.name)
+			doesHairCut(c, b)
+			b.Unlock()
 		}
 
 	}
@@ -68,16 +72,16 @@ func doesHairCut(c *Customer, b *Barber) {
 
 	b.Unlock()
 
-	fmt.Printf("Cutting hair to %v \n", c.name)
+	fmt.Printf("\n Cutting hair to %v \n", c.name)
 	time.Sleep(time.Millisecond * 100)
-	fmt.Printf("Hair cut to %v is finished \n", c.name)
+	fmt.Printf("Hair cut to %v is finished \n \n", c.name)
 
 	b.Lock()
 	b.customerBeingAttended = nil
 	wg.Done()
 }
 
-func customerArrivesToBarberShop(waitingCustomers chan<- *Customer, c *Customer, b *Barber) {
+func customerArrives(waitingCustomers chan<- *Customer, c *Customer, b *Barber, wakers chan<- *Customer) {
 
 	b.Lock()
 
@@ -87,11 +91,14 @@ func customerArrivesToBarberShop(waitingCustomers chan<- *Customer, c *Customer,
 
 	case sleeping:
 		select {
-		case waitingCustomers <- c:
+		case wakers <- c:
 		default:
-			wg.Done()
+			select {
+			case waitingCustomers <- c:
+			default:
+				wg.Done()
+			}
 		}
-
 	case cutting:
 		select {
 		case waitingCustomers <- c:
@@ -115,15 +122,18 @@ func main() {
 
 	waitingRoom := make(chan *Customer, waitingRoomChairs)
 
-	go barberWork(waitingRoom, barber)
+	wakers := make(chan *Customer, 1)
+
+	go barberWork(waitingRoom, barber, wakers)
 
 	wg = new(sync.WaitGroup)
 
-	for _, c := range customerGenerator(5) {
+	for _, c := range customerGenerator(20) {
 
 		wg.Add(1)
 
-		go customerArrivesToBarberShop(waitingRoom, c, barber)
+		go customerArrives(waitingRoom, c, barber, wakers)
+
 	}
 
 	wg.Wait()
